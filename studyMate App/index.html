@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StudyTrack — Exam Planner & Quiz Buddy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="grade-primary">
+
+  <!-- Spiral binder rail -->
+  <div class="binder-rail" aria-hidden="true">
+    <div class="ring"></div><div class="ring"></div><div class="ring"></div>
+    <div class="ring"></div><div class="ring"></div><div class="ring"></div>
+    <div class="ring"></div><div class="ring"></div>
+  </div>
+
+  <div class="page">
+
+    <header class="cover">
+      <p class="cover-eyebrow">StudyTrack</p>
+      <h1 class="cover-title">Your exams, planned like a to-do list.</h1>
+      <p class="cover-sub">Add your subjects and exam dates below — StudyTrack builds a day-by-day revision plan and a quick quiz for each one.</p>
+    </header>
+
+    <!-- Grade tabs -->
+    <nav class="grade-tabs" aria-label="Select your class">
+      <span class="tabs-label">I'm in class</span>
+      <div class="tabs-row" id="gradeTabs">
+        <!-- tabs 1-10 injected by JS -->
+      </div>
+    </nav>
+
+    <!-- Student + subject input -->
+    <section class="card intake" aria-labelledby="intake-heading">
+      <h2 id="intake-heading">Set up your planner</h2>
+
+      <label class="field">
+        <span>Your name</span>
+        <input type="text" id="studentName" placeholder="e.g. Aarav">
+      </label>
+
+      <div class="routine-fields">
+        <label class="field">
+          <span>Wake-up time</span>
+          <input type="time" id="wakeTime" value="06:00">
+        </label>
+        <label class="field">
+          <span>Sleep time</span>
+          <input type="time" id="sleepTime" value="22:00">
+        </label>
+        <label class="field checkbox-field">
+          <input type="checkbox" id="attendSchool" checked>
+          <span>I attend school / college during the day</span>
+        </label>
+        <div class="school-times" id="schoolTimes">
+          <label class="field">
+            <span>School / college starts</span>
+            <input type="time" id="schoolStart" value="08:00">
+          </label>
+          <label class="field">
+            <span>School / college ends</span>
+            <input type="time" id="schoolEnd" value="14:00">
+          </label>
+        </div>
+      </div>
+
+      <p class="hint">Mark how tough each subject feels — harder subjects get more minutes in the plan.</p>
+      <div id="subjectList" class="subject-list">
+        <!-- subject rows injected by JS -->
+      </div>
+
+      <button type="button" id="addSubjectBtn" class="btn btn-ghost">+ Add another subject</button>
+
+      <div class="intake-actions">
+        <button type="button" id="generateBtn" class="btn btn-primary">Build my timetable</button>
+      </div>
+      <p id="formError" class="form-error" role="alert"></p>
+    </section>
+
+    <!-- Dashboard summary -->
+    <section id="dashboard" class="dashboard hidden" aria-labelledby="dashboard-heading">
+      <h2 id="dashboard-heading" class="section-title">Your dashboard</h2>
+      <div class="stat-row" id="statRow">
+        <!-- stat cards injected by JS -->
+      </div>
+    </section>
+
+    <!-- Timetable -->
+    <section id="timetableSection" class="card timetable-card hidden" aria-labelledby="timetable-heading">
+      <h2 id="timetable-heading">Your one daily routine — from today to your exams</h2>
+      <p class="hint">Follow this one plan every day. Study blocks are longer for subjects you marked as harder.</p>
+      <div class="table-wrap">
+        <table id="timetableTable">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Time</th>
+              <th scope="col">Block</th>
+              <th scope="col">Details</th>
+            </tr>
+          </thead>
+          <tbody id="timetableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Quizzes -->
+    <section id="quizSection" class="quiz-section hidden" aria-labelledby="quiz-heading">
+      <h2 id="quiz-heading" class="section-title">Quick quizzes</h2>
+      <p class="hint">A short warm-up quiz for every subject you added.</p>
+      <div class="quiz-grid" id="quizGrid"></div>
+    </section>
+
+  </div>
+
+  <!-- Quiz modal -->
+  <div id="quizModal" class="modal-backdrop hidden">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="quizModalTitle">
+      <button type="button" class="modal-close" id="quizCloseBtn" aria-label="Close quiz">×</button>
+      <h3 id="quizModalTitle">Subject Quiz</h3>
+      <div id="quizModalBody"></div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
