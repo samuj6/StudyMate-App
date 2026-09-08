@@ -80,23 +80,19 @@
       <p id="formError" class="form-error" role="alert"></p>
     </section>
 
-    <!-- Dashboard summary -->
-    <section id="dashboard" class="dashboard hidden" aria-labelledby="dashboard-heading">
-      <h2 id="dashboard-heading" class="section-title">Your dashboard</h2>
+    <!-- Your one plan: stats + single recurring timetable together -->
+    <section id="timetableSection" class="card timetable-card hidden" aria-labelledby="timetable-heading">
+      <h2 id="timetable-heading">Your one daily routine — follow it every day until your exams</h2>
+      <p class="hint">One routine, repeated daily. Harder and more urgent subjects get bigger study slots. Regenerate anytime to rebalance as exam dates get closer.</p>
+
       <div class="stat-row" id="statRow">
         <!-- stat cards injected by JS -->
       </div>
-    </section>
 
-    <!-- Timetable -->
-    <section id="timetableSection" class="card timetable-card hidden" aria-labelledby="timetable-heading">
-      <h2 id="timetable-heading">Your one daily routine — from today to your exams</h2>
-      <p class="hint">Follow this one plan every day. Study blocks are longer for subjects you marked as harder.</p>
       <div class="table-wrap">
         <table id="timetableTable">
           <thead>
             <tr>
-              <th scope="col">Date</th>
               <th scope="col">Time</th>
               <th scope="col">Block</th>
               <th scope="col">Details</th>

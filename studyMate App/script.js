@@ -1,8 +1,9 @@
 /* =========================================================
    StudyTrack — app logic
    1. Grade tabs (1-10) switch the CSS theme tier
-   2. Dynamic subject + exam-date rows
-   3. Timetable generator: phases per subject based on days left
+   2. Dynamic subject + exam-date + difficulty rows
+   3. ONE recurring daily routine (wake -> school -> study -> sleep),
+      with study minutes split across subjects by difficulty + urgency
    4. Dashboard summary tiles
    5. Per-subject quiz bank + generic fallback quiz
    ========================================================= */
@@ -142,28 +143,6 @@ function minutesToTimeStr(mins) {
 
 const DIFFICULTY_WEIGHT = { easy: 1, medium: 1.6, hard: 2.4 };
 
-function subjectPhaseLabel(fractionLeft) {
-  if (fractionLeft > 0.6) return "Learn & understand new concepts";
-  if (fractionLeft > 0.3) return "Practice problems / past questions";
-  if (fractionLeft > 0.1) return "Revise notes & summaries";
-  return "Final revision & self-quiz";
-}
-
-/* Smooth Weighted Round Robin: picks the subject with the highest running
-   credit, then reduces its credit by the total weight — spreads picks out
-   fairly while favouring higher-weight (harder / more urgent) subjects. */
-function swrrPick(state, excludeName) {
-  const total = Object.values(state).reduce((s, e) => s + e.weight, 0);
-  let best = null;
-  Object.entries(state).forEach(([name, e]) => {
-    e.current += e.weight;
-    if (name === excludeName) return;
-    if (!best || e.current > state[best].current) best = name;
-  });
-  if (best) state[best].current -= total;
-  return best;
-}
-
 /* ---------- Timetable generation ---------- */
 function daysBetween(dateStr) {
   const today = new Date();
@@ -173,156 +152,97 @@ function daysBetween(dateStr) {
   return Math.round((exam - today) / (1000 * 60 * 60 * 24));
 }
 
-function addDays(date, n) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + n);
-  return d;
-}
-
-function formatDate(d) {
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-}
-
-/* Build ONE single day-by-day routine, from today until the last exam,
-   mixing the student's wake/school/meal/sleep routine with study blocks
-   whose length depends on each subject's difficulty + urgency. */
+/* Build ONE recurring daily routine (not repeated per date). The student
+   follows this same routine every day until their exams. Study time is
+   split, once, across every subject by weight = difficulty × urgency, so
+   harder / sooner subjects get a visibly bigger slot. Re-generating later
+   (as exam dates get closer) rebalances it automatically. */
 function generateSingleTimetable(subjects, routine) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const rows = [];
+  let t = timeStrToMinutes(routine.wake);
 
-  // Per-subject fixed data, computed once
-  const subjectInfo = {};
-  subjects.forEach(s => {
-    subjectInfo[s.name] = {
-      totalDays: Math.max(1, daysBetween(s.date)),
-      examDate: new Date(s.date)
-    };
+  rows.push(mkRow(t, "Wake up & freshen up", "Start the day", "wake"));
+  t += 30;
+
+  // Subjects still to prepare for (exam is at least 1 day away)
+  const upcoming = subjects.filter(s => daysBetween(s.date) > 0)
+    .sort((a, b) => daysBetween(a.date) - daysBetween(b.date));
+  const examToday = subjects.filter(s => daysBetween(s.date) === 0);
+
+  const mostUrgent = upcoming[0] ? upcoming[0].name : null;
+
+  // Morning recap block (fills the gap up to school, or a fixed 30 min)
+  const morningEnd = routine.attendSchool ? Math.max(t, timeStrToMinutes(routine.schoolStart)) : t + 30;
+  const recapMinutes = Math.max(15, Math.min(30, morningEnd - t));
+  if (mostUrgent) {
+    rows.push(mkRow(t, `Quick recap: ${mostUrgent}`, "Flip through yesterday's notes / flashcards", "revision"));
+  }
+  t += recapMinutes;
+
+  if (routine.attendSchool) {
+    const schoolStart = timeStrToMinutes(routine.schoolStart);
+    const schoolEnd = timeStrToMinutes(routine.schoolEnd);
+    t = Math.max(t, schoolStart);
+    rows.push(mkRow(t, "School / college", "Regular classes", "school"));
+    t = schoolEnd;
+  }
+  rows.push(mkRow(t, "Lunch & rest", "Eat, relax, short nap if needed", "meal"));
+  t += 45;
+
+  examToday.forEach(s => {
+    rows.push(mkRow(t, `Exam today: ${s.name}`, "Good luck! Do a light final skim only — no new topics.", "exam"));
   });
-  const lastExamDays = Math.max(...subjects.map(s => daysBetween(s.date)));
 
-  const allRows = []; // { date, time, block, detail, badgeClass }
-  let recapSubject = null; // carries into next day's morning recap
+  // ----- Split the evening study pool across ALL upcoming subjects -----
+  if (upcoming.length > 0) {
+    const dinnerMin = 30, finalRevisionMin = 20, breakMin = 10;
+    const sleepMinutes = timeStrToMinutes(routine.sleep);
+    let totalRemaining = sleepMinutes - t;
+    if (totalRemaining < 60) totalRemaining += 1440; // past-midnight edge case
+    const reserved = dinnerMin + finalRevisionMin + breakMin * (upcoming.length - 1);
+    const studyPoolMinutes = Math.max(40 * upcoming.length, totalRemaining - reserved);
 
-  for (let d = 0; d <= lastExamDays; d++) {
-    const currentDate = addDays(today, d);
+    const weights = upcoming.map(s => DIFFICULTY_WEIGHT[s.difficulty] * (1 / daysBetween(s.date)));
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
 
-    // Which subjects still have an exam today or later?
-    const active = subjects.filter(s => daysBetween(s.date) - d >= 0);
-    const examToday = subjects.filter(s => daysBetween(s.date) - d === 0);
-    const studyPool = subjects.filter(s => daysBetween(s.date) - d > 0);
+    // Minutes per subject, proportional to weight, each floored at 20 min
+    let minutesEach = weights.map(w => Math.max(20, Math.round((studyPoolMinutes * w) / totalWeight)));
 
-    const dayRows = [];
-    let t = timeStrToMinutes(routine.wake);
-
-    dayRows.push(mkRow(currentDate, t, "Wake up & freshen up", "Start the day", "wake"));
-    t += 30;
-
-    // Morning recap of the subject studied hardest the previous evening
-    const morningEnd = routine.attendSchool ? Math.max(t, timeStrToMinutes(routine.schoolStart)) : t + 30;
-    const recapMinutes = Math.max(15, Math.min(30, morningEnd - t));
-    if (recapSubject && studyPool.length) {
-      dayRows.push(mkRow(currentDate, t, `Quick recap: ${recapSubject}`, "Flip through yesterday's notes / flashcards", "revision"));
-    } else if (studyPool.length) {
-      dayRows.push(mkRow(currentDate, t, "Quick recap", "Skim through any subject's key points", "revision"));
-    }
-    t += recapMinutes;
-
-    if (routine.attendSchool) {
-      const schoolStart = timeStrToMinutes(routine.schoolStart);
-      const schoolEnd = timeStrToMinutes(routine.schoolEnd);
-      t = Math.max(t, schoolStart);
-      dayRows.push(mkRow(currentDate, t, "School / college", "Regular classes", "school"));
-      t = schoolEnd;
-      dayRows.push(mkRow(currentDate, t, "Lunch & rest", "Eat, relax, short nap if needed", "meal"));
-      t += 45;
-    } else {
-      dayRows.push(mkRow(currentDate, t, "Lunch & rest", "Eat, relax, short nap if needed", "meal"));
-      t += 45;
-    }
-
-    // Exam-today notices
-    examToday.forEach(s => {
-      dayRows.push(mkRow(currentDate, t, `Exam: ${s.name}`, "Good luck! Do a light final skim only.", "exam"));
-    });
-
-    // ----- Weighted study blocks for the evening -----
-    if (studyPool.length > 0) {
-      const weightState = {};
-      studyPool.forEach(s => {
-        const daysLeftForSubject = daysBetween(s.date) - d;
-        const weight = DIFFICULTY_WEIGHT[s.difficulty] * (1 / daysLeftForSubject);
-        weightState[s.name] = { weight, current: 0 };
-      });
-
-      const block1 = swrrPick(weightState);
-      const block2 = studyPool.length > 1 ? swrrPick(weightState, block1) : block1;
-
-      const dinnerMin = 30, finalRevisionMin = 20, shortBreakMin = 15;
-      const sleepMinutes = timeStrToMinutes(routine.sleep);
-      let totalDayMinutes = sleepMinutes - t;
-      if (totalDayMinutes < 60) totalDayMinutes += 1440; // past midnight edge case
-      const reserved = dinnerMin + finalRevisionMin + (block1 !== block2 ? shortBreakMin : 0);
-      const studyPoolMinutes = Math.max(40, totalDayMinutes - reserved);
-
-      let block1Minutes, block2Minutes;
-      if (block1 === block2) {
-        block1Minutes = studyPoolMinutes;
-        block2Minutes = 0;
-      } else {
-        const w1 = weightState[block1].weight, w2 = weightState[block2].weight;
-        block1Minutes = Math.max(25, Math.round((studyPoolMinutes * w1) / (w1 + w2)));
-        block2Minutes = Math.max(25, studyPoolMinutes - block1Minutes);
-      }
-
-      const info1 = subjectInfo[block1];
-      const fraction1 = (daysBetween(subjects.find(s => s.name === block1).date) - d) / info1.totalDays;
-      dayRows.push(mkRow(
-        currentDate, t, `Study block: ${block1}`,
-        `${subjectPhaseLabel(fraction1)} (${block1Minutes} min, ${capitalize(subjects.find(s => s.name === block1).difficulty)} difficulty)`,
+    upcoming.forEach((s, i) => {
+      const daysLeft = daysBetween(s.date);
+      rows.push(mkRow(
+        t, `Study: ${s.name}`,
+        `${minutesEach[i]} min — ${capitalize(s.difficulty)} difficulty, exam in ${daysLeft}d`,
         "study"
       ));
-      t += block1Minutes;
-
-      if (block1 !== block2) {
-        dayRows.push(mkRow(currentDate, t, "Short break", "Stretch, hydrate, walk around", "break"));
-        t += shortBreakMin;
-
-        const info2 = subjectInfo[block2];
-        const fraction2 = (daysBetween(subjects.find(s => s.name === block2).date) - d) / info2.totalDays;
-        dayRows.push(mkRow(
-          currentDate, t, `Study block: ${block2}`,
-          `${subjectPhaseLabel(fraction2)} (${block2Minutes} min, ${capitalize(subjects.find(s => s.name === block2).difficulty)} difficulty)`,
-          "study"
-        ));
-        t += block2Minutes;
+      t += minutesEach[i];
+      if (i < upcoming.length - 1) {
+        rows.push(mkRow(t, "Short break", "Stretch, hydrate, walk around", "break"));
+        t += breakMin;
       }
+    });
 
-      dayRows.push(mkRow(currentDate, t, "Dinner", "Eat & unwind", "meal"));
-      t += dinnerMin;
+    rows.push(mkRow(t, "Dinner", "Eat & unwind", "meal"));
+    t += dinnerMin;
 
-      recapSubject = block2 || block1;
-      dayRows.push(mkRow(currentDate, t, `Final light revision: ${recapSubject}`, "One quick pass — no new topics this late", "revision"));
-      t += finalRevisionMin;
-    } else {
-      dayRows.push(mkRow(currentDate, t, "Dinner", "Eat & unwind", "meal"));
-      t += 30;
-      recapSubject = null;
-    }
-
-    if (t < timeStrToMinutes(routine.sleep)) {
-      dayRows.push(mkRow(currentDate, t, "Free time / wind down", "Relax before bed", "break"));
-    }
-    dayRows.push(mkRow(currentDate, routine.sleep, "Sleep", "Aim for a full night's rest", "sleep"));
-
-    allRows.push(...dayRows);
+    rows.push(mkRow(t, `Final light revision: ${mostUrgent}`, "One quick pass — no new topics this late", "revision"));
+    t += finalRevisionMin;
+  } else {
+    rows.push(mkRow(t, "Dinner", "Eat & unwind", "meal"));
+    t += 30;
   }
 
-  return allRows;
+  if (t < timeStrToMinutes(routine.sleep)) {
+    rows.push(mkRow(t, "Free time / wind down", "Relax before bed", "break"));
+  }
+  rows.push(mkRow(routine.sleep, "Sleep", "Aim for a full night's rest", "sleep"));
+
+  return rows;
 }
 
-function mkRow(date, timeInput, block, detail, type) {
+function mkRow(timeInput, block, detail, type) {
   const timeLabel = typeof timeInput === "number" ? minutesToTimeStr(timeInput) : minutesToTimeStr(timeStrToMinutes(timeInput));
-  return { date, timeLabel, block, detail, type };
+  return { timeLabel, block, detail, type };
 }
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
@@ -357,23 +277,21 @@ function generateTimetable() {
   renderTimetable(rows);
   renderDashboard(subjects);
   renderQuizzes(subjects);
+
+  document.getElementById("timetableSection").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderTimetable(rows) {
   const tbody = document.getElementById("timetableBody");
   tbody.innerHTML = "";
-  let lastDateStr = null;
   rows.forEach(row => {
-    const dateStr = formatDate(row.date);
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${dateStr === lastDateStr ? "" : `<strong>${dateStr}</strong>`}</td>
       <td>${row.timeLabel}</td>
       <td><span class="badge block-${row.type}">${row.block}</span></td>
       <td>${row.detail}</td>
     `;
     tbody.appendChild(tr);
-    lastDateStr = dateStr;
   });
   document.getElementById("timetableSection").classList.remove("hidden");
 }
@@ -397,8 +315,6 @@ function renderDashboard(subjects) {
     div.innerHTML = `<span class="num">${t.num}</span><span class="lbl">${t.lbl}</span>`;
     statRow.appendChild(div);
   });
-
-  document.getElementById("dashboard").classList.remove("hidden");
 }
 
 /* ---------- Quizzes ---------- */
