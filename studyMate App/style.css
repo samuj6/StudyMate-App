@@ -95,20 +95,55 @@ body{
   display:flex; flex-wrap:wrap; gap:8px;
 }
 .grade-tab{
-  font-family: var(--font-head); font-weight:600;
-  border:2px solid var(--paper-line);
-  background: white;
-  color: var(--ink);
+  font-family: var(--font-head); font-weight:700;
+  border:2px solid color-mix(in srgb, var(--tab-color, var(--accent)) 40%, var(--paper-line));
+  background: color-mix(in srgb, var(--tab-color, var(--accent)) 12%, white);
+  color: var(--tab-color, var(--accent));
   width:42px; height:42px;
-  border-radius: 10px 10px 3px 3px;
+  border-radius: 999px;
   cursor:pointer;
-  transition: transform .12s ease, border-color .12s ease;
+  transition: transform .18s cubic-bezier(.34,1.56,.64,1), box-shadow .18s ease;
 }
-.grade-tab:hover{ transform: translateY(-2px); }
+.grade-tab:nth-child(1){ --tab-color:#EF6F6C; }
+.grade-tab:nth-child(2){ --tab-color:#F4B942; }
+.grade-tab:nth-child(3){ --tab-color:#3FA796; }
+.grade-tab:nth-child(4){ --tab-color:#7C6FEA; }
+.grade-tab:nth-child(5){ --tab-color:#E85D9C; }
+.grade-tab:nth-child(6){ --tab-color:#4C9BEF; }
+.grade-tab:nth-child(7){ --tab-color:#8BC34A; }
+.grade-tab:nth-child(8){ --tab-color:#FF9F45; }
+.grade-tab:nth-child(9){ --tab-color:#E15554; }
+.grade-tab:nth-child(10){ --tab-color:#6C63FF; }
+.grade-tab:hover{ transform: translateY(-4px) rotate(-4deg) scale(1.05); }
 .grade-tab[aria-pressed="true"]{
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--tab-color, var(--accent));
+  background: var(--tab-color, var(--accent));
   color:white;
+  transform: translateY(-2px) rotate(-2deg) scale(1.08);
+  box-shadow: 0 8px 16px color-mix(in srgb, var(--tab-color, var(--accent)) 45%, transparent);
+}
+
+/* View mode segmented control (One Routine / Day-by-Day / Weekly) */
+.view-tabs{
+  display:flex; flex-wrap:wrap; gap:8px;
+  margin-bottom:22px;
+}
+.view-tab{
+  font-family: var(--font-head); font-weight:600; font-size:.85rem;
+  padding:9px 18px;
+  border-radius:999px;
+  border:2px solid var(--paper-line);
+  background:white; color:var(--ink-soft);
+  cursor:pointer;
+  transition: transform .15s cubic-bezier(.34,1.56,.64,1), background .15s ease, color .15s ease;
+}
+.view-tab:hover{ transform: translateY(-3px) scale(1.03); border-color: var(--purple); color:var(--purple); }
+.view-tab[aria-pressed="true"]{
+  background: var(--purple);
+  border-color: var(--purple);
+  color:white;
+  transform: translateY(-1px) scale(1.05);
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--purple) 40%, transparent);
 }
 
 /* ---------- Cards ---------- */

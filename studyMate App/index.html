@@ -22,7 +22,7 @@
     <header class="cover">
       <p class="cover-eyebrow">StudyTrack</p>
       <h1 class="cover-title">Your exams, planned like a to-do list.</h1>
-      <p class="cover-sub">Add your subjects and exam dates below — StudyTrack builds a day-by-day revision plan and a quick quiz for each one.</p>
+      <p class="cover-sub">Add your subjects and exam dates below — StudyTrack builds a revision plan (as one routine, day-by-day, or weekly) and a quick quiz for each subject.</p>
     </header>
 
     <!-- Grade tabs -->
@@ -80,10 +80,16 @@
       <p id="formError" class="form-error" role="alert"></p>
     </section>
 
-    <!-- Your one plan: stats + single recurring timetable together -->
+    <!-- Your plan: view switcher + stats + table -->
     <section id="timetableSection" class="card timetable-card hidden" aria-labelledby="timetable-heading">
-      <h2 id="timetable-heading">Your one daily routine — follow it every day until your exams</h2>
-      <p class="hint">One routine, repeated daily. Harder and more urgent subjects get bigger study slots. Regenerate anytime to rebalance as exam dates get closer.</p>
+      <h2 id="timetable-heading">Your study plan</h2>
+      <p class="hint">Pick the view that suits you. Harder and more urgent subjects always get bigger study slots.</p>
+
+      <div class="view-tabs" role="tablist" aria-label="Choose timetable view">
+        <button type="button" class="view-tab" data-mode="single" aria-pressed="true">One Routine</button>
+        <button type="button" class="view-tab" data-mode="daily" aria-pressed="false">Day-by-Day</button>
+        <button type="button" class="view-tab" data-mode="weekly" aria-pressed="false">Weekly Plan</button>
+      </div>
 
       <div class="stat-row" id="statRow">
         <!-- stat cards injected by JS -->
@@ -91,7 +97,7 @@
 
       <div class="table-wrap">
         <table id="timetableTable">
-          <thead>
+          <thead id="timetableHead">
             <tr>
               <th scope="col">Time</th>
               <th scope="col">Block</th>

@@ -143,6 +143,44 @@ function minutesToTimeStr(mins) {
 
 const DIFFICULTY_WEIGHT = { easy: 1, medium: 1.6, hard: 2.4 };
 
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+function formatDate(d) {
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+function formatShortDate(d) {
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+function minutesToHoursLabel(mins) {
+  const h = Math.floor(mins / 60), m = mins % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+function subjectPhaseLabel(fractionLeft) {
+  if (fractionLeft > 0.6) return "Learn concepts";
+  if (fractionLeft > 0.3) return "Practice problems";
+  if (fractionLeft > 0.1) return "Revise notes";
+  return "Final revision";
+}
+
+/* Rough total study minutes available per day, after wake routine, school,
+   meals, recap and final revision are reserved. Shared by the daily and
+   weekly views so their numbers line up with the "One Routine" view. */
+function getStudyPoolMinutes(routine) {
+  const wake = timeStrToMinutes(routine.wake);
+  const sleep = timeStrToMinutes(routine.sleep);
+  let total = sleep - wake;
+  if (total < 60) total += 1440;
+  const school = routine.attendSchool
+    ? (timeStrToMinutes(routine.schoolEnd) - timeStrToMinutes(routine.schoolStart))
+    : 0;
+  const fixed = 30 /* wake routine */ + 20 /* recap */ + school + 45 /* lunch */ + 30 /* dinner */ + 20 /* final revision */ + 15 /* misc breaks */;
+  return Math.max(60, total - fixed);
+}
+
 /* ---------- Timetable generation ---------- */
 function daysBetween(dateStr) {
   const today = new Date();
@@ -246,6 +284,73 @@ function mkRow(timeInput, block, detail, type) {
 }
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
+/* Day-by-day agenda: one row per subject per day, until every exam is done. */
+function buildDailyPlanRows(subjects, routine) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const pool = getStudyPoolMinutes(routine);
+  const lastExamDays = Math.max(...subjects.map(s => daysBetween(s.date)));
+  const rows = [];
+
+  for (let d = 0; d <= lastExamDays; d++) {
+    const dateLabel = formatDate(addDays(today, d));
+
+    subjects.filter(s => daysBetween(s.date) - d === 0).forEach(s => {
+      rows.push({ dateLabel, dayOffset: d, subject: s.name, isExam: true });
+    });
+
+    const active = subjects.filter(s => daysBetween(s.date) - d > 0);
+    if (active.length === 0) continue;
+
+    const weights = active.map(s => DIFFICULTY_WEIGHT[s.difficulty] * (1 / (daysBetween(s.date) - d)));
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+
+    active.forEach((s, i) => {
+      const minutes = Math.max(15, Math.round((pool * weights[i]) / totalWeight));
+      const daysLeftThatDay = daysBetween(s.date) - d;
+      const fraction = daysLeftThatDay / Math.max(1, daysBetween(s.date));
+      rows.push({
+        dateLabel, dayOffset: d, subject: s.name, minutes,
+        phase: subjectPhaseLabel(fraction), difficulty: s.difficulty, isExam: false
+      });
+    });
+  }
+  return rows;
+}
+
+/* Weekly totals: aggregate the daily plan's minutes by ISO-ish week (7-day
+   blocks starting today) so a student can see the big picture at a glance. */
+function buildWeeklyPlanRows(subjects, routine) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const daily = buildDailyPlanRows(subjects, routine).filter(r => !r.isExam);
+
+  const weeks = {}; // weekIndex -> { subject -> {minutes, phase, difficulty} }
+  daily.forEach(r => {
+    const weekIndex = Math.floor(r.dayOffset / 7);
+    if (!weeks[weekIndex]) weeks[weekIndex] = {};
+    if (!weeks[weekIndex][r.subject]) {
+      weeks[weekIndex][r.subject] = { minutes: 0, phase: r.phase, difficulty: r.difficulty };
+    }
+    weeks[weekIndex][r.subject].minutes += r.minutes;
+  });
+
+  const rows = [];
+  Object.keys(weeks).sort((a, b) => a - b).forEach(weekIndex => {
+    const start = addDays(today, weekIndex * 7);
+    const end = addDays(today, weekIndex * 7 + 6);
+    const weekLabel = `Week ${Number(weekIndex) + 1} (${formatShortDate(start)} – ${formatShortDate(end)})`;
+    Object.entries(weeks[weekIndex]).forEach(([subject, info]) => {
+      rows.push({ weekLabel, subject, totalLabel: minutesToHoursLabel(info.minutes), phase: info.phase, difficulty: info.difficulty });
+    });
+  });
+  return rows;
+}
+
+let lastSubjects = null;
+let lastRoutine = null;
+let currentMode = "single";
+
 function generateTimetable() {
   const errorEl = document.getElementById("formError");
   errorEl.textContent = "";
@@ -273,27 +378,65 @@ function generateTimetable() {
     return;
   }
 
-  const rows = generateSingleTimetable(subjects, routine);
-  renderTimetable(rows);
+  lastSubjects = subjects;
+  lastRoutine = routine;
+
+  renderByMode(currentMode);
   renderDashboard(subjects);
   renderQuizzes(subjects);
 
+  document.getElementById("timetableSection").classList.remove("hidden");
   document.getElementById("timetableSection").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function renderTimetable(rows) {
-  const tbody = document.getElementById("timetableBody");
-  tbody.innerHTML = "";
-  rows.forEach(row => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${row.timeLabel}</td>
-      <td><span class="badge block-${row.type}">${row.block}</span></td>
-      <td>${row.detail}</td>
-    `;
-    tbody.appendChild(tr);
+function setTableHeaders(headers) {
+  document.getElementById("timetableHead").innerHTML =
+    `<tr>${headers.map(h => `<th scope="col">${h}</th>`).join("")}</tr>`;
+}
+
+function renderByMode(mode) {
+  if (!lastSubjects) return;
+  currentMode = mode;
+  document.querySelectorAll(".view-tab").forEach(btn => {
+    btn.setAttribute("aria-pressed", btn.dataset.mode === mode ? "true" : "false");
   });
-  document.getElementById("timetableSection").classList.remove("hidden");
+
+  const tbody = document.getElementById("timetableBody");
+
+  if (mode === "single") {
+    setTableHeaders(["Time", "Block", "Details"]);
+    const rows = generateSingleTimetable(lastSubjects, lastRoutine);
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${r.timeLabel}</td>
+        <td><span class="badge block-${r.type}">${r.block}</span></td>
+        <td>${r.detail}</td>
+      </tr>`).join("");
+
+  } else if (mode === "daily") {
+    setTableHeaders(["Date", "Subject", "Time", "Focus"]);
+    const rows = buildDailyPlanRows(lastSubjects, lastRoutine);
+    tbody.innerHTML = rows.map(r => r.isExam
+      ? `<tr><td>${r.dateLabel}</td><td colspan="3"><span class="badge block-exam">Exam: ${r.subject}</span> — good luck!</td></tr>`
+      : `<tr>
+          <td>${r.dateLabel}</td>
+          <td>${r.subject}</td>
+          <td>${r.minutes} min</td>
+          <td>${r.phase} <span class="difficulty-${r.difficulty}">(${capitalize(r.difficulty)})</span></td>
+        </tr>`
+    ).join("");
+
+  } else if (mode === "weekly") {
+    setTableHeaders(["Week", "Subject", "Total time", "Focus"]);
+    const rows = buildWeeklyPlanRows(lastSubjects, lastRoutine);
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${r.weekLabel}</td>
+        <td>${r.subject}</td>
+        <td>${r.totalLabel}</td>
+        <td>${r.phase} <span class="difficulty-${r.difficulty}">(${capitalize(r.difficulty)})</span></td>
+      </tr>`).join("");
+  }
 }
 
 /* ---------- Dashboard ---------- */
@@ -400,6 +543,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("addSubjectBtn").addEventListener("click", () => addSubjectRow());
   document.getElementById("generateBtn").addEventListener("click", generateTimetable);
+  document.querySelectorAll(".view-tab").forEach(btn => {
+    btn.addEventListener("click", () => renderByMode(btn.dataset.mode));
+  });
   document.getElementById("quizCloseBtn").addEventListener("click", closeQuiz);
   document.getElementById("quizModal").addEventListener("click", (e) => {
     if (e.target.id === "quizModal") closeQuiz();
