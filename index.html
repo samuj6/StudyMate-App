@@ -19,6 +19,19 @@
 
   <div class="page">
 
+    <section class="auth-bar" aria-label="Account">
+      <div id="authSignedOut">
+        <strong>Save your planner</strong>
+        <button type="button" class="btn btn-small" id="loginBtn">Sign in</button>
+        <button type="button" class="btn btn-small btn-primary" id="registerBtn">Create account</button>
+      </div>
+      <div id="authSignedIn" class="hidden">
+        <span>Signed in as <strong id="accountName"></strong></span>
+        <button type="button" class="btn btn-small" id="logoutBtn">Sign out</button>
+      </div>
+      <p id="authMessage" class="auth-message" role="status"></p>
+    </section>
+
     <header class="cover">
       <p class="cover-eyebrow">StudyTrack</p>
       <h1 class="cover-title">Your exams, planned like a to-do list.</h1>
@@ -114,6 +127,20 @@
       <div class="quiz-grid" id="quizGrid"></div>
     </section>
 
+  </div>
+
+  <div id="authModal" class="modal-backdrop hidden">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <button type="button" class="modal-close" id="authCloseBtn" aria-label="Close">×</button>
+      <h3 id="authTitle">Create your account</h3>
+      <form id="authForm">
+        <label class="field" id="authNameField"><span>Name</span><input id="authName" autocomplete="name"></label>
+        <label class="field"><span>Email</span><input id="authEmail" type="email" required autocomplete="email"></label>
+        <label class="field"><span>Password</span><input id="authPassword" type="password" required minlength="8" autocomplete="new-password"></label>
+        <button type="submit" class="btn btn-primary" id="authSubmit">Create account</button>
+        <p id="authError" class="form-error" role="alert"></p>
+      </form>
+    </div>
   </div>
 
   <!-- Quiz modal -->

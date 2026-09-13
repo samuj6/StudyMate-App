@@ -59,6 +59,11 @@ body{
   max-width:880px; margin:0 auto;
   padding: 48px 24px 96px 64px;
 }
+.auth-bar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:24px; color:var(--ink-soft); font-size:.9rem; }
+.auth-bar > div{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.auth-message{ margin:0; color:var(--teal); }
+.btn-small{ padding:7px 14px; font-size:.85rem; background:white; border-color:var(--paper-line); color:var(--ink); }
+.btn-small:hover{ border-color:var(--accent); color:var(--accent); }
 @media (max-width:640px){ .page{ padding:32px 18px 72px; } }
 
 /* ---------- Cover ---------- */
@@ -137,6 +142,7 @@ body{
   background:var(--paper);
   color:var(--ink);
 }
+.field input[type="password"]{ letter-spacing:.08em; }
 .field input:focus{ outline:none; border-color:var(--accent); }
 
 .subject-list{ display:flex; flex-direction:column; gap:12px; margin-bottom:14px; }

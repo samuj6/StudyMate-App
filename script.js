@@ -44,6 +44,98 @@ const GENERIC_QUIZ = [
 
 /* ---------- State ---------- */
 let subjectRowCount = 0;
+let authMode = "register";
+let authToken = localStorage.getItem("studymate_token");
+
+function authHeaders() {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+}
+
+async function apiRequest(url, options = {}) {
+  const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...authHeaders(), ...(options.headers || {}) } });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Something went wrong.");
+  return data;
+}
+
+function plannerProfile() {
+  return {
+    name: document.getElementById("studentName").value.trim(),
+    grade: [...document.querySelectorAll(".grade-tab")].findIndex(tab => tab.getAttribute("aria-pressed") === "true") + 1,
+    routine: {
+      wake: document.getElementById("wakeTime").value || "06:00",
+      sleep: document.getElementById("sleepTime").value || "22:00",
+      attendSchool: document.getElementById("attendSchool").checked,
+      schoolStart: document.getElementById("schoolStart").value || "08:00",
+      schoolEnd: document.getElementById("schoolEnd").value || "14:00"
+    },
+    subjects: readSubjects()
+  };
+}
+
+async function savePlanner() {
+  if (!authToken) return;
+  try {
+    await apiRequest("/api/planner", { method: "PUT", body: JSON.stringify(plannerProfile()) });
+    document.getElementById("authMessage").textContent = "Planner saved";
+  } catch (error) { document.getElementById("authMessage").textContent = error.message; }
+}
+
+function applyProfile(profile) {
+  if (!profile) return;
+  document.getElementById("studentName").value = profile.name || "";
+  document.getElementById("wakeTime").value = profile.routine?.wake || "06:00";
+  document.getElementById("sleepTime").value = profile.routine?.sleep || "22:00";
+  document.getElementById("attendSchool").checked = profile.routine?.attendSchool !== false;
+  document.getElementById("schoolStart").value = profile.routine?.schoolStart || "08:00";
+  document.getElementById("schoolEnd").value = profile.routine?.schoolEnd || "14:00";
+  document.getElementById("schoolTimes").classList.toggle("hidden", !document.getElementById("attendSchool").checked);
+  document.getElementById("subjectList").innerHTML = "";
+  subjectRowCount = 0;
+  (profile.subjects || []).forEach(subject => addSubjectRow(subject));
+  if (!profile.subjects?.length) { addSubjectRow(); addSubjectRow(); }
+  if (profile.grade) selectGrade(profile.grade);
+}
+
+function setSignedIn(user) {
+  document.getElementById("authSignedOut").classList.toggle("hidden", Boolean(user));
+  document.getElementById("authSignedIn").classList.toggle("hidden", !user);
+  if (user) document.getElementById("accountName").textContent = user.name;
+}
+
+function openAuth(mode) {
+  authMode = mode;
+  document.getElementById("authTitle").textContent = mode === "login" ? "Welcome back" : "Create your account";
+  document.getElementById("authSubmit").textContent = mode === "login" ? "Sign in" : "Create account";
+  document.getElementById("authNameField").classList.toggle("hidden", mode === "login");
+  document.getElementById("authPassword").autocomplete = mode === "login" ? "current-password" : "new-password";
+  document.getElementById("authError").textContent = "";
+  document.getElementById("authModal").classList.remove("hidden");
+}
+
+async function restoreSession() {
+  if (!authToken) return;
+  try {
+    const { user } = await apiRequest("/api/me");
+    setSignedIn(user);
+    const { profile } = await apiRequest("/api/planner");
+    applyProfile(profile);
+  } catch { localStorage.removeItem("studymate_token"); authToken = null; }
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  const body = { email: document.getElementById("authEmail").value, password: document.getElementById("authPassword").value };
+  if (authMode === "register") body.name = document.getElementById("authName").value;
+  try {
+    const { token, user } = await apiRequest(`/api/auth/${authMode}`, { method: "POST", body: JSON.stringify(body) });
+    authToken = token;
+    localStorage.setItem("studymate_token", token);
+    setSignedIn(user);
+    document.getElementById("authModal").classList.add("hidden");
+    await savePlanner();
+  } catch (error) { document.getElementById("authError").textContent = error.message; }
+}
 
 /* ---------- Grade tabs ---------- */
 function initGradeTabs() {
@@ -357,6 +449,7 @@ function generateTimetable() {
   renderTimetable(rows);
   renderDashboard(subjects);
   renderQuizzes(subjects);
+  savePlanner();
 }
 
 function renderTimetable(rows) {
@@ -484,6 +577,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("addSubjectBtn").addEventListener("click", () => addSubjectRow());
   document.getElementById("generateBtn").addEventListener("click", generateTimetable);
+  document.getElementById("loginBtn").addEventListener("click", () => openAuth("login"));
+  document.getElementById("registerBtn").addEventListener("click", () => openAuth("register"));
+  document.getElementById("authForm").addEventListener("submit", submitAuth);
+  document.getElementById("authCloseBtn").addEventListener("click", () => document.getElementById("authModal").classList.add("hidden"));
+  document.getElementById("logoutBtn").addEventListener("click", () => {
+    authToken = null;
+    localStorage.removeItem("studymate_token");
+    setSignedIn(null);
+    document.getElementById("authMessage").textContent = "Signed out";
+  });
+  restoreSession();
   document.getElementById("quizCloseBtn").addEventListener("click", closeQuiz);
   document.getElementById("quizModal").addEventListener("click", (e) => {
     if (e.target.id === "quizModal") closeQuiz();

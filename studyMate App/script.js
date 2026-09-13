@@ -406,12 +406,18 @@ function renderByMode(mode) {
   if (mode === "single") {
     setTableHeaders(["Time", "Block", "Details"]);
     const rows = generateSingleTimetable(lastSubjects, lastRoutine);
-    tbody.innerHTML = rows.map(r => `
-      <tr>
-        <td>${r.timeLabel}</td>
-        <td><span class="badge block-${r.type}">${r.block}</span></td>
-        <td>${r.detail}</td>
-      </tr>`).join("");
+    tbody.innerHTML = rows.map((r, i) => {
+      const isStudy = r.type === "study";
+      const pomoButton = isStudy
+        ? `<br><button type="button" class="pomo-btn" data-pomo-id="pomo-${i}" data-subject="${escapeAttr(r.block.replace("Study: ", ""))}">▶ Start Focus (25:00)</button>`
+        : "";
+      return `
+        <tr>
+          <td>${r.timeLabel}</td>
+          <td><span class="badge block-${r.type}">${r.block}</span></td>
+          <td>${r.detail}${pomoButton}</td>
+        </tr>`;
+    }).join("");
 
   } else if (mode === "daily") {
     setTableHeaders(["Date", "Subject", "Time", "Focus"]);
@@ -444,20 +450,49 @@ function renderDashboard(subjects) {
   const statRow = document.getElementById("statRow");
   statRow.innerHTML = "";
 
-  const nearest = subjects.reduce((a, b) => (daysBetween(a.date) < daysBetween(b.date) ? a : b));
   const hardOnes = subjects.filter(s => s.difficulty === "hard");
   const tiles = [
-    { num: subjects.length, lbl: "Subjects added", cls: "" },
-    { num: `${daysBetween(nearest.date)}d`, lbl: `Until ${nearest.name}`, cls: "urgent" },
-    { num: hardOnes.length, lbl: hardOnes.length === 1 ? `Hardest: ${hardOnes[0].name}` : "Marked as hard", cls: hardOnes.length ? "urgent" : "ok" }
+    { num: subjects.length, lbl: "Subjects added", cls: "", id: "" },
+    { num: "", lbl: "", cls: "urgent", id: "countdownTile" },
+    { num: hardOnes.length, lbl: hardOnes.length === 1 ? `Hardest: ${hardOnes[0].name}` : "Marked as hard", cls: hardOnes.length ? "urgent" : "ok", id: "" }
   ];
 
   tiles.forEach(t => {
     const div = document.createElement("div");
     div.className = `stat-tile ${t.cls}`;
-    div.innerHTML = `<span class="num">${t.num}</span><span class="lbl">${t.lbl}</span>`;
+    const numId = t.id ? `id="${t.id}Num"` : "";
+    const lblId = t.id ? `id="${t.id}Lbl"` : "";
+    div.innerHTML = `<span class="num" ${numId}>${t.num}</span><span class="lbl" ${lblId}>${t.lbl}</span>`;
     statRow.appendChild(div);
   });
+
+  updateCountdown();
+  if (!countdownInterval) {
+    countdownInterval = setInterval(updateCountdown, 60000);
+  }
+}
+
+/* Live "Xd Yh left" ticker for the nearest exam, refreshed every minute */
+let countdownInterval = null;
+function updateCountdown() {
+  if (!lastSubjects || lastSubjects.length === 0) return;
+  const numEl = document.getElementById("countdownTileNum");
+  const lblEl = document.getElementById("countdownTileLbl");
+  if (!numEl || !lblEl) return;
+
+  const nearest = lastSubjects.reduce((a, b) => (new Date(a.date) < new Date(b.date) ? a : b));
+  const examMoment = new Date(nearest.date);
+  const diffMs = examMoment - new Date();
+
+  if (diffMs <= 0) {
+    numEl.textContent = "Today!";
+  } else {
+    const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    numEl.textContent = days > 0 ? `${days}d ${hours}h` : `${hours}h left`;
+  }
+  lblEl.textContent = `Until ${nearest.name}`;
 }
 
 /* ---------- Quizzes ---------- */
@@ -534,10 +569,104 @@ function closeQuiz() {
   document.getElementById("quizModal").classList.add("hidden");
 }
 
+/* ---------- Pomodoro focus timer (each "Study" row, One Routine view) ---------- */
+const pomodoroState = {};
+
+function escapeAttr(s) { return String(s).replace(/"/g, "&quot;"); }
+function formatMMSS(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function togglePomodoro(btn) {
+  const id = btn.dataset.pomoId;
+  const subject = btn.dataset.subject;
+  const state = pomodoroState[id];
+
+  // Running -> clicking again turns it OFF (stop & reset)
+  if (state && state.intervalId) {
+    clearInterval(state.intervalId);
+    delete pomodoroState[id];
+    btn.textContent = "▶ Start Focus (25:00)";
+    btn.classList.remove("running");
+    return;
+  }
+
+  // Not running -> turn it ON
+  let remaining = 25 * 60;
+  btn.textContent = `⏸ Stop (${formatMMSS(remaining)})`;
+  btn.classList.add("running");
+
+  const intervalId = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(intervalId);
+      delete pomodoroState[id];
+      btn.textContent = "▶ Start Focus (25:00)";
+      btn.classList.remove("running");
+      onPomodoroComplete(subject);
+      return;
+    }
+    btn.textContent = `⏸ Stop (${formatMMSS(remaining)})`;
+  }, 1000);
+
+  pomodoroState[id] = { intervalId };
+}
+
+function onPomodoroComplete(subject) {
+  playBeep();
+  showToast(`⏰ Focus session done — great work on ${subject}!`);
+  if (window.Notification && Notification.permission === "granted") {
+    try { new Notification("StudyTrack", { body: `Focus session on ${subject} complete!` }); } catch (e) { /* ignore */ }
+  }
+}
+
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (e) { /* Web Audio unavailable — fail silently */ }
+}
+
+function showToast(message) {
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
+/* ---------- Dark mode toggle ---------- */
+function initThemeToggle() {
+  const btn = document.getElementById("themeToggle");
+  btn.addEventListener("click", () => {
+    const isDark = document.body.getAttribute("data-theme") === "dark";
+    if (isDark) {
+      document.body.removeAttribute("data-theme");
+      btn.textContent = "🌙";
+      btn.setAttribute("aria-pressed", "false");
+    } else {
+      document.body.setAttribute("data-theme", "dark");
+      btn.textContent = "☀️";
+      btn.setAttribute("aria-pressed", "true");
+    }
+  });
+}
+
 /* ---------- Init ---------- */
 document.addEventListener("DOMContentLoaded", () => {
   initGradeTabs();
   initRoutineToggle();
+  initThemeToggle();
   addSubjectRow();
   addSubjectRow();
 
@@ -545,6 +674,10 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("generateBtn").addEventListener("click", generateTimetable);
   document.querySelectorAll(".view-tab").forEach(btn => {
     btn.addEventListener("click", () => renderByMode(btn.dataset.mode));
+  });
+  document.getElementById("timetableBody").addEventListener("click", (e) => {
+    const btn = e.target.closest(".pomo-btn");
+    if (btn) togglePomodoro(btn);
   });
   document.getElementById("quizCloseBtn").addEventListener("click", closeQuiz);
   document.getElementById("quizModal").addEventListener("click", (e) => {
