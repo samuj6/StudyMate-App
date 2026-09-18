@@ -4,3 +4,4 @@ data/
 data/
 .env
 .env.local
+.env.example
